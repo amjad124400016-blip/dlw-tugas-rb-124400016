@@ -1,132 +1,115 @@
-// =====================================================================
-// Template Laporan Tugas — Workshop Deep Learning (Teknik Telekomunikasi ITERA)
-// Studi Ablasi RNN, LSTM, GRU vs ANN untuk Prediksi Trafik Seluler
-//
-// Format IEEE conference dua kolom (paket charged-ieee), MAKSIMAL 6 HALAMAN
-// termasuk referensi.
-// Compile: typst compile main.typ   (atau unggah folder ini ke typst.app)
-// Bila muncul peringatan font "TeX Gyre Termes" saat compile lokal, pasang font TeX Gyre
-// atau tambahkan --font-path ke folder font tersebut. Di typst.app font sudah tersedia.
-//
-// Teks abu-abu dalam #petunjuk[...] adalah petunjuk: HAPUS dan ganti dengan isi kalian.
-// =====================================================================
+// Laporan hasil tugas ablasi — berdasarkan output tugas_ablasi.ipynb
 #import "@preview/charged-ieee:0.1.4": ieee
 
 #set text(lang: "id")
-#let petunjuk(isi) = text(fill: gray.darken(20%))[[#isi]]
+#let hasil(isi) = text(fill: black)[#isi]
 
 #show: ieee.with(
-  title: [Studi Ablasi RNN, LSTM, dan GRU dibandingkan ANN untuk Prediksi Trafik Seluler Kota Milan],
+  title: [Studi Ablasi ANN, RNN, LSTM, dan GRU untuk Prediksi Trafik Seluler],
   abstract: [
-    #petunjuk[150–200 kata. Tuliskan: masalah (prediksi trafik internet per jam), data (Telecom Italia, kotak Duomo dan lokasi kelompok), apa yang diuji (ablasi faktor apa saja, 3 seed), temuan utama dengan angka (misalnya "GRU terbaik dengan test MAE $x plus.minus y$, turun $z$ % dari acuan"), dan satu kalimat kesimpulan.]
+    Penelitian ini mengevaluasi pengaruh konfigurasi model terhadap prediksi trafik internet per jam menggunakan data Telecom Italia di area Duomo, Milan, serta menguji generalisasi pada Parco Sempione. Empat model dibandingkan: ANN, RNN, LSTM, dan GRU. Eksperimen meliputi panjang jendela, ukuran hidden, jumlah lapisan, learning rate, kelompok fitur, optimizer, dan patience. Setiap konfigurasi dievaluasi dengan tiga seed; pemilihan konfigurasi mengacu pada rata-rata MAE validasi, sedangkan kinerja akhir dilaporkan pada minggu test dan periode Natal. Pada konfigurasi acuan, RNN memperoleh test MAE 229,6 ± 5,1 dan GRU 237,2 ± 9,3, lebih rendah daripada LSTM dan ANN. Ablasi menunjukkan bahwa panjang jendela pendek membantu ANN, tetapi RNN relatif stabil pada jendela yang lebih panjang. Learning rate 0,0001 dan optimizer SGD tidak mencapai hasil sebaik Adam pada batas 300 epoch. Konfigurasi gabungan yang diuji tidak mengubah konfigurasi acuan, sehingga hasil “terbaik” sama dengan acuan. Pada Parco Sempione, RNN menjadi model dengan test MAE terendah, yaitu 99,5 ± 2,7. Kesalahan seluruh model meningkat pada periode Natal, menandakan perubahan pola trafik dan tantangan generalisasi temporal.
   ],
-  // Satu entri per anggota (maks. 3). Hapus yang tidak dipakai.
   authors: (
-    (name: "Nama Anggota 1", department: [NIM 1221400xx], organization: [Teknik Telekomunikasi, ITERA], email: "email@student.itera.ac.id"),
-    (name: "Nama Anggota 2", department: [NIM 1221400xx], organization: [Teknik Telekomunikasi, ITERA], email: "email@student.itera.ac.id"),
-    (name: "Nama Anggota 3", department: [NIM 1221400xx], organization: [Teknik Telekomunikasi, ITERA], email: "email@student.itera.ac.id"),
+    (name: [Nama Anggota 1], department: [NIM 1221400xx], organization: [Teknik Telekomunikasi, ITERA], email: [email@student.itera.ac.id]),
+    (name: [Nama Anggota 2], department: [NIM 1221400xx], organization: [Teknik Telekomunikasi, ITERA], email: [email@student.itera.ac.id]),
+    (name: [Nama Anggota 3], department: [NIM 1221400xx], organization: [Teknik Telekomunikasi, ITERA], email: [email@student.itera.ac.id]),
   ),
-  index-terms: ("prediksi trafik seluler", "RNN", "LSTM", "GRU", "studi ablasi"),
+  index-terms: ("prediksi trafik seluler", "ANN", "RNN", "LSTM", "GRU", "studi ablasi"),
   bibliography: bibliography("references.bib", title: [Pustaka]),
-  figure-supplement: [Gambar],
 )
 
 = Pendahuluan
-#petunjuk[Mengapa operator perlu meramal trafik per sel? Mengapa model sekuensial (RNN, LSTM @hochreiter1997lstm, GRU @cho2014gru) dibandingkan dengan ANN? Apa itu studi ablasi dan mengapa penting? Tutup dengan daftar kontribusi laporan ini (2–3 butir). Maks. 0,5 kolom.]
+Prediksi trafik seluler membantu operator memperkirakan kebutuhan kapasitas jaringan dan mengenali perubahan beban dari waktu ke waktu. Trafik bersifat temporal: penggunaan pada suatu jam dapat dipengaruhi oleh jam sebelumnya serta pola harian dan mingguan. Karena itu, model yang memanfaatkan urutan seperti recurrent neural network (RNN), long short-term memory (LSTM), dan gated recurrent unit (GRU) layak dibandingkan dengan artificial neural network (ANN) yang menerima jendela data sebagai masukan tetap.
+
+Studi ablasi mengubah satu faktor pada satu waktu untuk mengetahui seberapa sensitif hasil terhadap pilihan desain. Laporan ini (1) membandingkan empat arsitektur pada konfigurasi acuan, (2) menguji lima faktor wajib dan dua faktor pilihan, serta (3) mengevaluasi model pada lokasi lain di Milan. Seluruh angka hasil eksperimen diambil dari output notebook yang dijalankan.
 
 = Data dan Metode
+== Dataset dan pembagian waktu
+Data berisi 1.344 observasi per jam dengan fitur trafik internet (`net`), panggilan (`call`), SMS (`sms`), serta representasi siklik jam dan hari (`jam_sin`, `jam_cos`, `hari_sin`, `hari_cos`). Eksperimen utama menggunakan kotak Duomo (kode lokasi `duomo`, kotak 5060). Uji generalisasi memakai lokasi kode 6, Parco Sempione (kotak 5455).
 
-== Dataset
-#petunjuk[Telecom Italia Big Data Challenge @barlacchi2015milan, versi per jam dari @zhang2021fedda: periode, resolusi, fitur. Sebutkan kotak Duomo (5060) dan lokasi kelompok (kode, nama, nomor kotak). @fig:peta boleh dipakai.]
+Pembagian mengikuti urutan waktu: train 11 November–8 Desember, validasi 9–15 Desember, test 16–22 Desember, dan periode Natal 23–29 Desember. Jendela historis membentuk masukan untuk memprediksi trafik satu jam berikutnya (`horizon = 1`). Fitur distandarisasi menggunakan statistik sebelum minggu validasi agar informasi masa depan tidak bocor ke proses praproses. Data deret waktu tidak diacak karena urutan dan pemisahan waktu perlu dipertahankan.
+
+== Model dan konfigurasi acuan
+ANN meratakan jendela masukan lalu meneruskannya ke lapisan dense. RNN memproses urutan secara rekuren, sedangkan LSTM dan GRU menggunakan gerbang untuk mengatur informasi yang dibawa antarwaktu. Konfigurasi acuan memakai jendela 24 jam, horizon 1 jam, Adam dengan learning rate 0,001, batch size 64, dropout 0, patience 30, dan maksimum 300 epoch. Ukuran hidden acuan adalah ANN 32, RNN 68, LSTM 33, dan GRU 38; ANN menggunakan dua lapisan tersembunyi, sedangkan model rekuren satu lapisan. Fitur acuan mencakup seluruh tujuh fitur. Training menggunakan early stopping dan bobot terbaik berdasarkan loss validasi.
+
+== Protokol evaluasi
+Setiap konfigurasi diuji dengan tiga seed. Hasil diringkas sebagai rata-rata ± simpangan baku. Metrik utama untuk pemilihan konfigurasi adalah MAE validasi; MAE test dan MAE Natal dipakai untuk mengevaluasi kinerja pada periode terpisah. Notebook mencatat 348 run dan total waktu training sekitar 131,1 menit. Lingkungan komputasi yang digunakan tidak dicatat secara eksplisit dalam output, sehingga tidak disimpulkan apakah seluruh training berjalan pada CPU atau GPU.
+
+= Hasil
+== Baseline naif dan konfigurasi acuan
+Baseline naif di Duomo menunjukkan bahwa tidak ada satu metode naif yang unggul pada semua split. Pada horizon satu jam, MAE test adalah 552,2 untuk prediksi “kemarin”, 467,6 untuk “minggu lalu”, dan 600,9 untuk “nilai terakhir”. Seluruh model terlatih memiliki MAE test lebih rendah daripada baseline tersebut.
 
 #figure(
-  image("gambar/peta_lokasi_tugas.png", width: 85%),
-  caption: [Rata-rata aktivitas internet per kotak di Milan. Lingkaran kuning: lokasi tugas (kode 0–9); lingkaran toska: Duomo.],
-  placement: top,
-) <fig:peta>
-
-== Pembagian Data dan Praproses
-#petunjuk[Pembagian berdasarkan waktu (train / val / test / Natal), standarisasi dengan statistik sebelum minggu validasi, _windowing_. Jelaskan mengapa data deret waktu tidak boleh diacak.]
-
-== Model dan Konfigurasi Acuan
-#petunjuk[Uraikan ANN, RNN, LSTM, GRU secara singkat (tanpa menyalin slide). Sajikan konfigurasi acuan dalam @tab:acuan.]
-
-#figure(
-  caption: [Konfigurasi acuan],
-  placement: top,
+  caption: [Hasil konfigurasi acuan di Duomo. Nilai ditampilkan sebagai MAE rata-rata ± simpangan baku dari tiga seed.],
   table(
-    columns: 2,
-    align: left,
+    columns: 4,
+    align: (left, center, center, center),
     stroke: none,
     table.hline(),
-    table.header([*Hyperparameter*], [*Nilai acuan*]),
+    table.header([*Model*], [*Val MAE*], [*Test MAE*], [*Natal MAE*]),
     table.hline(stroke: 0.5pt),
-    [Panjang jendela $W$], [24 jam],
-    [Horizon], [1 jam],
-    [Ukuran hidden], [ANN 32, RNN 68, LSTM 33, GRU 38],
-    [Jumlah lapisan], [ANN 2, rekuren 1],
-    [Fitur], [net, call, sms, jam, hari (7)],
-    [Optimizer, _learning rate_], [Adam, $10^(-3)$],
-    [_Batch size_], [64],
-    [_Early stopping_], [_patience_ 30, maks. 300 epoch],
+    [ANN], [250,1 ± 8,6], [313,9 ± 9,9], [675,7 ± 44,6],
+    [RNN], [206,1 ± 7,4], [229,6 ± 5,1], [421,2 ± 2,4],
+    [LSTM], [230,5 ± 12,2], [273,6 ± 25,4], [586,0 ± 56,8],
+    [GRU], [207,5 ± 3,8], [237,2 ± 9,3], [468,2 ± 21,8],
     table.hline(),
   ),
 ) <tab:acuan>
 
-== Protokol Ablasi dan Evaluasi
-#petunjuk[Satu faktor diubah setiap kali; daftar faktor dan nilainya (A1–A5 dan dua faktor B pilihan kalian beserta hipotesis awal). Setiap konfigurasi dilatih dengan 3 seed; dilaporkan rata-rata $plus.minus$ simpangan baku. Metrik: MAE, RMSE, MAPE pada skala asli. Pemilihan konfigurasi terbaik memakai val MAE. Sebutkan perangkat yang dipakai (CPU/GPU) dan total waktu training.]
+RNN mencatat MAE test terendah pada konfigurasi acuan (229,6), diikuti GRU (237,2), LSTM (273,6), dan ANN (313,9). RNN juga memiliki simpangan baku test yang relatif kecil. Pada periode Natal, kesalahan meningkat pada semua model, paling jelas pada ANN dan LSTM. Hal ini menunjukkan bahwa performa pada minggu test tidak sepenuhnya mewakili periode dengan pola trafik berbeda.
 
-= Hasil
+== Ablasi wajib
+=== A1. Panjang jendela
+Panjang jendela yang diuji adalah 6, 12, 24, 48, dan 168 jam. Untuk ANN, jendela 6 jam memberikan val MAE 212,5 ± 5,2 dan test MAE 271,1 ± 13,9; ketika jendela menjadi 168 jam, val MAE naik menjadi 298,2 ± 18,2 dan test MAE menjadi 402,0 ± 12,5. Jumlah parameter ANN juga meningkat dari 2.465 menjadi 38.753. Sebaliknya, RNN memiliki val MAE terendah pada jendela 48 jam (200,1 ± 5,3) dan test MAE 224,5 ± 11,7. Jadi, jendela yang lebih panjang tidak otomatis lebih baik; dampaknya bergantung pada arsitektur dan kapasitas model.
 
-== Baseline Naif dan Acuan
-#petunjuk[Tabel baseline naif dan hasil konfigurasi acuan (Bagian 0).]
+=== A2. Ukuran hidden
+Ukuran hidden diuji pada 16, 32, 64, dan 128. Pada GRU, val MAE turun dari 216,8 ± 21,2 pada hidden 16 menjadi 188,7 ± 4,2 pada hidden 128; test MAE juga membaik dari 246,9 ± 10,4 menjadi 220,3 ± 10,6. LSTM juga membaik pada ukuran lebih besar, dengan test MAE 245,6 ± 6,7 pada hidden 128. Namun ukuran lebih besar menambah parameter secara signifikan, misalnya GRU dari 1.217 menjadi 52.737 parameter. Hasil ini memperlihatkan manfaat kapasitas tambahan pada beberapa model, tetapi tetap perlu ditimbang terhadap biaya komputasi dan risiko generalisasi.
 
-== Ablasi Wajib
-#petunjuk[Satu subbagian atau paragraf per faktor A1–A5. Gunakan grafik dari folder `hasil/` (boleh digabung beberapa dalam satu gambar agar hemat tempat) dan tabel seperti @tab:contoh. Setiap gambar dan tabel harus dirujuk dan dibahas di teks.]
+=== A3. Jumlah lapisan
+Jumlah lapisan diuji pada 1, 2, dan 3. Penambahan lapisan tidak konsisten meningkatkan akurasi. RNN satu lapisan memiliki val MAE 206,1 ± 7,4 dan test MAE 229,6 ± 5,1; pada tiga lapisan, test MAE memburuk menjadi 245,5 ± 19,1. LSTM mengalami penurunan paling besar saat tiga lapisan: val MAE 338,9 ± 16,9 dan test MAE 412,6 ± 54,2. Hasil tersebut konsisten dengan dugaan bahwa model yang lebih dalam lebih sulit dilatih pada data terbatas dan dapat mengalami generalisasi lebih buruk.
 
-#figure(
-  caption: [Contoh format: pengaruh panjang jendela $W$ terhadap test MAE (rata-rata $plus.minus$ simpangan baku, 3 seed). Angka di bawah hanya contoh.],
-  placement: top,
-  table(
-    columns: 5,
-    align: (left, center, center, center, center),
-    stroke: none,
-    table.hline(),
-    table.header([*$W$ (jam)*], [*ANN*], [*RNN*], [*LSTM*], [*GRU*]),
-    table.hline(stroke: 0.5pt),
-    [6], [$000 plus.minus 00$], [$000 plus.minus 00$], [$000 plus.minus 00$], [$000 plus.minus 00$],
-    [24], [$000 plus.minus 00$], [$bold(000 plus.minus 00)$], [$000 plus.minus 00$], [$000 plus.minus 00$],
-    [168], [$000 plus.minus 00$], [$000 plus.minus 00$], [$000 plus.minus 00$], [$000 plus.minus 00$],
-    table.hline(),
-  ),
-) <tab:contoh>
+=== A4. Learning rate
+Learning rate 0,0001, 0,001, dan 0,01 diuji dengan batas maksimum 300 epoch. Pada learning rate 0,0001, semua model mencapai 300 epoch dan memperoleh val MAE yang tinggi; contohnya RNN 285,0 ± 13,7. Ini mengindikasikan bahwa laju belajar tersebut terlalu kecil untuk konvergen secara efektif dalam batas yang tersedia. Learning rate 0,001 menghasilkan val MAE RNN 206,1 ± 7,4. Learning rate 0,01 membantu LSTM (val MAE 215,9 ± 14,2), tetapi simpangan baku ANN pada test meningkat menjadi 53,2. Dengan demikian, learning rate optimal dapat berbeda menurut arsitektur, dan laju yang lebih tinggi tidak selalu stabil.
 
-== Ablasi Pilihan
-#petunjuk[Dua faktor B pilihan kalian: hipotesis awal, hasil, dan apakah hipotesis terbukti.]
+=== A5. Kelompok fitur
+Empat kelompok fitur dibandingkan: hanya `net`, `net+call+sms`, `net+waktu`, dan seluruh fitur. Untuk RNN, fitur `net+call+sms` memberi test MAE 227,6 ± 2,2, sedikit lebih baik daripada fitur lengkap (229,6 ± 5,1). Untuk GRU, fitur `net+waktu` menghasilkan val MAE 213,2 ± 18,2 dan test MAE 239,7 ± 25,4, sementara fitur lengkap menghasilkan val MAE 207,5 ± 3,8 dan test MAE 237,2 ± 9,3. Fitur tambahan tidak selalu memperbaiki hasil secara konsisten. Pada ANN, penggunaan hanya `net` memberi test MAE 271,7 ± 13,9, lebih baik daripada konfigurasi fitur lengkap yang mencapai 313,9 ± 9,9.
 
-== Konfigurasi Terbaik
-#petunjuk[Konfigurasi terbaik tiap model (dipilih dengan val MAE), lalu hasilnya pada minggu test dan Natal dibandingkan dengan acuan dan baseline naif.]
+== Ablasi pilihan
+Dua faktor pilihan yang aktif pada notebook adalah optimizer (B3) dan patience (B5).
 
-== Uji Generalisasi
-#petunjuk[Hasil acuan vs terbaik di lokasi kelompok. Apakah urutan model berubah? Kaitkan dengan pola trafik lokasi tersebut.]
+=== B3. Optimizer
+Adam, AdamW, dan SGD dibandingkan. Adam dan AdamW menghasilkan hasil yang sangat mirip pada model rekuren: RNN memiliki test MAE sekitar 229,6, sedangkan GRU sekitar 237,2. SGD mencapai batas 300 epoch untuk semua model dan memberi val MAE lebih tinggi, misalnya 299,2 ± 10,2 untuk RNN dan 413,6 ± 14,3 untuk LSTM. Dalam konfigurasi yang diuji, Adam/AdamW lebih efektif daripada SGD tanpa penyesuaian lain.
+
+=== B5. Patience
+Patience 10, 30, dan 60 diuji untuk early stopping. Pada patience 10, RNN memperoleh val MAE 220,2 ± 11,4 dan test MAE 232,3 ± 3,2. Patience 30 memberi val MAE 206,1 ± 7,4 dan test MAE 229,6 ± 5,1. Patience 60 sedikit memperbaiki test MAE GRU menjadi 229,7 ± 7,5, tetapi nilai validasinya 205,6 ± 9,9. Secara umum, patience 30 memberi kompromi yang baik pada RNN; peningkatan patience tidak menjamin perbaikan besar pada semua arsitektur.
+
+== Konfigurasi terbaik
+Konfigurasi gabungan pada Bagian C tidak mengubah parameter dari acuan (`TERBAIK` berisi `dict()` untuk setiap model). Oleh karena itu, tabel hasil terbaik sama dengan hasil acuan, bukan hasil tuning gabungan yang independen. Berdasarkan val MAE, RNN memiliki nilai terendah (206,1 ± 7,4), diikuti GRU (207,5 ± 3,8). Pada test, RNN tetap terbaik dengan MAE 229,6 ± 5,1. Nilai Natal RNN adalah 421,2 ± 2,4, jauh di atas test, sehingga generalisasi ke periode Natal masih menjadi keterbatasan.
+
+== Uji generalisasi: Parco Sempione
+Pada lokasi kode 6, Parco Sempione (kotak 5455), baseline naif test MAE adalah 137,8 untuk “nilai terakhir”, 231,2 untuk “kemarin”, dan 167,8 untuk “minggu lalu”. RNN memiliki test MAE terendah di antara model terlatih, yaitu 99,5 ± 2,7; GRU memperoleh 108,4 ± 8,9, ANN 116,6 ± 4,7, dan LSTM 119,8 ± 19,2. RNN lebih baik daripada baseline naif terbaik (137,8). Karena konfigurasi terbaik Duomo sama dengan acuan, nilai acuan dan terbaik di Parco Sempione identik. MAE Natal kembali meningkat: RNN 185,3 ± 13,8, GRU 217,4 ± 28,3, ANN 242,3 ± 24,7, dan LSTM 309,6 ± 55,3.
 
 = Pembahasan
-#petunjuk[Bagian terpenting. Jangan hanya mengulang angka: jelaskan _mengapa_. Hyperparameter mana yang paling berpengaruh dan mana yang tidak? Apakah perbedaan antar model lebih besar daripada perbedaan antar seed? Apa keterbatasan studi ini (satu kota, 4 minggu train, satu kali pembagian waktu)?]
+Eksperimen memperlihatkan bahwa pilihan arsitektur dan pengaturan training memengaruhi kesalahan prediksi. RNN memberi hasil paling konsisten pada konfigurasi acuan dan lokasi generalisasi. GRU kompetitif, khususnya ketika ukuran hidden diperbesar. LSTM tidak unggul dalam konfigurasi acuan dan sangat sensitif terhadap penambahan lapisan, yang tampak dari kenaikan MAE pada tiga lapisan. ANN mendapat manfaat dari jendela pendek; memperpanjang jendela membuat masukan ANN jauh lebih besar karena data diratakan, sekaligus meningkatkan jumlah parameter.
+
+Dampak hyperparameter tidak seragam. Learning rate terlalu kecil menyebabkan training mencapai batas epoch, sedangkan SGD pada pengaturan yang diuji juga belum menghasilkan performa kompetitif. Fitur tambahan berupa call, SMS, dan waktu tidak selalu meningkatkan akurasi dibandingkan hanya atau sebagian fitur. Perbedaan ini menguatkan perlunya mengevaluasi konfigurasi pada validasi, bukan memilih berdasarkan test. Simpangan baku antar-seed relatif kecil pada beberapa hasil RNN, tetapi lebih besar pada konfigurasi tertentu, misalnya LSTM dan learning rate tinggi.
+
+Ada beberapa keterbatasan. Eksperimen berfokus pada satu kota dan satu lokasi utama untuk ablasi, menggunakan pembagian waktu yang tetap, serta hanya tiga seed per konfigurasi. Periode Natal memiliki distribusi trafik berbeda dan menimbulkan kesalahan lebih besar. Selain itu, Bagian C tidak melakukan pencarian gabungan parameter karena seluruh `TERBAIK` dibiarkan kosong; kesimpulan “konfigurasi terbaik” karenanya berarti konfigurasi acuan yang diuji ulang, bukan optimum global.
 
 = Kesimpulan
-#petunjuk[3–5 kalimat yang menjawab pertanyaan studi, dengan angka.]
+Pada Duomo, RNN merupakan model terbaik dalam konfigurasi acuan dengan test MAE 229,6 ± 5,1, diikuti GRU 237,2 ± 9,3. Ablasi menunjukkan bahwa jendela panjang tidak selalu membantu, kedalaman tambahan dapat memperburuk generalisasi, dan learning rate maupun optimizer perlu disesuaikan dengan arsitektur. Pada Parco Sempione, RNN juga memperoleh test MAE terendah (99,5 ± 2,7) dan mengungguli baseline naif terbaik. Seluruh model mengalami peningkatan kesalahan pada periode Natal, sehingga adaptasi terhadap perubahan pola temporal perlu diteliti lebih lanjut.
 
 #heading(numbering: none)[Kontribusi Anggota]
 #table(
   columns: (auto, 1fr),
   stroke: none,
-  [Nama Anggota 1], petunjuk[contoh: Bagian A1–A3, penulisan Hasil],
-  [Nama Anggota 2], petunjuk[...],
-  [Nama Anggota 3], petunjuk[...],
+  [Nama Anggota 1], [Isi kontribusi aktual],
+  [Nama Anggota 2], [Isi kontribusi aktual],
+  [Nama Anggota 3], [Isi kontribusi aktual],
 )
 
 #heading(numbering: none)[Pernyataan Penggunaan AI]
-#petunjuk[Tuliskan alat AI yang dipakai (misalnya ChatGPT, Claude, Copilot) dan untuk apa (memperbaiki kode, merapikan bahasa, dll.). Bila tidak memakai, tulis "Tidak ada." Seluruh angka harus berasal dari run kalian sendiri.]
+ChatGPT digunakan untuk membantu menyusun struktur laporan dan merapikan bahasa berdasarkan output notebook. Seluruh angka eksperimen merujuk pada output `tugas_ablasi.ipynb` yang disediakan.
 
 #heading(numbering: none)[Kode dan Data]
-Kode, notebook beserta output, dan seluruh hasil run tersedia di #link("https://github.com/username/nama-repo").
+Kode, notebook beserta output, dan berkas hasil eksperimen perlu ditautkan ke repositori kelompok. Ganti tautan berikut dengan URL repositori yang benar: #link("https://github.com/username/nama-repo")[repositori proyek].
